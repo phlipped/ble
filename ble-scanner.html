@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web BLE Scanner</title>
+    <!-- Load Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Use Inter font */
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Custom style for the log output */
+        #logOutput {
+            font-family: 'Menlo', 'Consolas', monospace;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+    </style>
+    <!-- Import Inter font from Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center p-4">
+
+    <div class="bg-white rounded-lg shadow-xl p-6 md:p-8 w-full max-w-lg">
+        <h1 class="text-3xl font-bold text-center text-gray-800 mb-2">Web BLE Scanner</h1>
+        <p class="text-center text-gray-600 mb-6">Connect to a BLE device with a Battery Service.</p>
+
+        <!-- Main Action Button -->
+        <button id="scanButton" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg shadow-md transition-all duration-300 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50">
+            Scan for Devices
+        </button>
+
+        <!-- Disconnect Button (hidden initially) -->
+        <button id="disconnectButton" class="hidden w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-lg shadow-md transition-all duration-300 ease-in-out mt-4 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50">
+            Disconnect
+        </button>
+
+        <!-- Status & Log Output Area -->
+        <div class="mt-6 bg-gray-900 text-white rounded-lg p-4 h-64 overflow-y-auto" id="logContainer">
+            <code id="logOutput">Waiting for action...</code>
+        </div>
+    </div>
+
+    <script>
+        // Get DOM elements
+        const scanButton = document.getElementById('scanButton');
+        const disconnectButton = document.getElementById('disconnectButton');
+        const logOutput = document.getElementById('logOutput');
+
+        let bleDevice = null;
+        let bleServer = null;
+
+        // --- Logger Function ---
+        function log(message) {
+            console.log(message);
+            // Append message to the log output
+            logOutput.textContent += `\n> ${message}`;
+            // Auto-scroll to the bottom
+            logOutput.parentElement.scrollTop = logOutput.parentElement.scrollHeight;
+        }
+
+        // --- Main Scan and Connect Function ---
+        async function onScanButtonClick() {
+            // Check for Web Bluetooth support
+            if (!navigator.bluetooth) {
+                log('Web Bluetooth API is not supported in this browser.');
+                log('Try Chrome or Edge on Desktop or Android.');
+                return;
+            }
+
+            log('Requesting Bluetooth device...');
+            
+            try {
+                // Request a device with the 'battery_service'
+                // This will open the browser's device picker
+                bleDevice = await navigator.bluetooth.requestDevice({
+                    filters: [{
+                        services: ['battery_service']
+                    }]
+                    // Or, to see all devices:
+                    // acceptAllDevices: true,
+                    // optionalServices: ['battery_service'] // Specify services you might want to use
+                });
+
+                log(`Connecting to "${bleDevice.name}"...`);
+                
+                // Add disconnect listener
+                bleDevice.addEventListener('gattserverdisconnected', onDisconnected);
+
+                // Connect to the GATT server
+                bleServer = await bleDevice.gatt.connect();
+                log('Connected to GATT Server.');
+
+                // Get the Battery Service
+                const service = await bleServer.getPrimaryService('battery_service');
+                log('Got Battery Service.');
+
+                // Get the Battery Level Characteristic
+                const characteristic = await service.getCharacteristic('battery_level');
+                log('Got Battery Level Characteristic.');
+
+                // Read the battery level value
+                const value = await characteristic.readValue();
+                const batteryLevel = value.getUint8(0);
+                
+                log(`Battery Level is ${batteryLevel}%`);
+                
+                // Update UI
+                scanButton.classList.add('hidden');
+                disconnectButton.classList.remove('hidden');
+                log('Ready to disconnect.');
+
+            } catch (error) {
+                // Handle errors
+                if (error.name === 'NotFoundError') {
+                    log('No device selected or scan cancelled.');
+                } else if (error.name === 'NotSupportedError') {
+                    log('Web Bluetooth is not supported on this platform.');
+                } else {
+                    log(`Error: ${error.message}`);
+                }
+            }
+        }
+
+        // --- Disconnect Function ---
+        function onDisconnectButtonClick() {
+            if (!bleDevice) {
+                log('No device connected.');
+                return;
+            }
+
+            if (bleDevice.gatt.connected) {
+                log(`Disconnecting from "${bleDevice.name}"...`);
+                bleDevice.gatt.disconnect();
+            } else {
+                log('Device is already disconnected.');
+                onDisconnected(); // Manually trigger UI update
+            }
+        }
+
+        // --- Disconnected Event Handler ---
+        function onDisconnected() {
+            log(`Device "${bleDevice.name}" disconnected.`);
+            
+            // Clean up
+            bleDevice = null;
+            bleServer = null;
+
+            // Update UI
+            scanButton.classList.remove('hidden');
+            disconnectButton.classList.add('hidden');
+            log('Ready to scan again.');
+        }
+
+        // --- Event Listeners ---
+        scanButton.addEventListener('click', onScanButtonClick);
+        disconnectButton.addEventListener('click', onDisconnectButtonClick);
+
+        // Initial log
+        log('Page loaded. Click "Scan for Devices" to start.');
+        log('Remember: This requires HTTPS and a compatible browser (like Chrome).');
+
+    </script>
+</body>
+</html>
+
