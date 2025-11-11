@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Prize Wheel Illusion</title>
+    <!-- Load Inter font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            font-family: 'Inter', sans-serif;
+            /* Dark background for the "void" */
+            background-color: #111;
+            color: white;
+            /* Prevent all scrolling and overscroll effects */
+            overflow: hidden;
+            position: fixed;
+        }
+
+        /* The "viewport" is what you see through your device */
+        #viewport {
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* The prize wheel itself, much larger than the screen */
+        #wheel {
+            /* Use vmin to make it responsive to portrait/landscape */
+            width: 300vmin;
+            height: 300vmin;
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            border-radius: 50%;
+            
+            /* Generate the 12 segments of the wheel.
+              We start 'from 255deg' which is (270deg - 15deg).
+              This centers the first 30-degree segment (for "12") at the top (270deg).
+            */
+            background: conic-gradient(
+                from 255deg,
+                #DA70D6 0deg 30deg,    /* 12 */
+                #1E90FF 30deg 60deg,    /* 1 */
+                #40E0D0 60deg 90deg,    /* 2 */
+                #ADFF2F 90deg 120deg,   /* 3 */
+                #FF6347 120deg 150deg,  /* 4 */
+                #FFD700 150deg 180deg,  /* 5 */
+                #DA70D6 180deg 210deg,  /* 6 */
+                #1E90FF 210deg 240deg,  /* 7 */
+                #40E0D0 240deg 270deg,  /* 8 */
+                #ADFF2F 270deg 300deg,  /* 9 */
+                #FF6347 300deg 330deg,  /* 10 */
+                #FFD700 330deg 360deg   /* 11 */
+            );
+            
+            /* Initial transform centers the wheel. JS will add rotation. */
+            transform: translate(-50%, -50%) rotate(0deg);
+            /* Add smoothing to the rotation */
+            transition: transform 0.1s linear;
+            /* Optimize for transform changes */
+            will-change: transform;
+            
+            color: #000;
+            font-size: 5vmin;
+            font-weight: bold;
+        }
+
+        /* Style for the numbers on the wheel */
+        .number {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            /* Set a fixed size for the number container */
+            width: 10vmin;
+            height: 10vmin;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            /* JS will set the transform to position and rotate each number */
+        }
+
+        /* A fixed pointer to show the "12 o'clock" position */
+        #pointer {
+            position: absolute;
+            top: 10vh; /* Position it near the top of the screen */
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            height: 0;
+            /* Create a triangle pointing down */
+            border-left: 20px solid transparent;
+            border-right: 20px solid transparent;
+            border-top: 30px solid #FF0000;
+            z-index: 10;
+            border-radius: 4px;
+        }
+
+        /* Button to request sensor permission (required on iOS) */
+        #permission-btn {
+            position: absolute;
+            bottom: 20vh;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 1rem 2rem;
+            font-size: 1.2rem;
+            background-color: #1E90FF;
+            color: white;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            z-index: 20;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            display: none; /* Hidden by default, shown by JS if needed */
+        }
+
+        #permission-btn:disabled {
+            background-color: #555;
+            cursor: not-allowed;
+        }
+
+        /* A custom message box for errors/info */
+        #message-box {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(0,0,0,0.8);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            z-index: 100;
+            display: none;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="viewport">
+        <div id="wheel">
+            <!-- Numbers will be added here by JavaScript -->
+        </div>
+        <div id="pointer"></div>
+    </div>
+
+    <!-- This button is required for iOS 13+ -->
+    <button id="permission-btn">Enable Motion Sensors</button>
+
+    <!-- This div is used for displaying messages -->
+    <div id="message-box"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const wheel = document.getElementById('wheel');
+            const permissionBtn = document.getElementById('permission-btn');
+            
+            // --- 1. Add numbers to the wheel ---
+            const radius = 135; // in vmin (150 total radius - 15 padding)
+            for (let i = 1; i <= 12; i++) {
+                const numberEl = document.createElement('div');
+                numberEl.className = 'number';
+                numberEl.innerText = i;
+                
+                /* Calculate position and rotation for each number.
+                  Angle for "12" (i=12) is 270 deg (top).
+                  Angle for "1" (i=1) is 300 deg.
+                  Angle for "3" (i=3) is 0 deg (right).
+                  Formula: (i * 30 - 90) degrees
+                */
+                const angleDeg = (i * 30) - 90;
+                const angleRad = angleDeg * (Math.PI / 180);
+                
+                // Convert polar coordinates (angle, radius) to cartesian (x, y)
+                const x = radius * Math.cos(angleRad);
+                const y = radius * Math.sin(angleRad);
+                
+                /*
+                  Apply transforms:
+                  1. translate(-50%, -50%): Center the number element's origin
+                  2. translate(x, y): Move it to its position on the wheel
+                  3. rotate(angle + 90): Rotate the number itself so it faces upright
+                */
+                numberEl.style.transform = `translate(-50%, -50%) translate(${x}vmin, ${y}vmin) rotate(${angleDeg + 90}deg)`;
+                
+                wheel.appendChild(numberEl);
+            }
+
+            let isListening = false;
+
+            // --- 2. Utility to show messages ---
+            const showMessage = (message, duration = 3000) => {
+                const msgBox = document.getElementById('message-box');
+                if (!msgBox) return;
+                
+                msgBox.innerText = message;
+                msgBox.style.display = 'block';
+                setTimeout(() => {
+                    msgBox.style.display = 'none';
+                }, duration);
+            };
+
+            // --- 3. Function to start listening to sensor ---
+            const startListening = () => {
+                if (isListening) return;
+                
+                if (window.DeviceOrientationEvent) {
+                    window.addEventListener('deviceorientation', (event) => {
+                        // event.gamma is the left-to-right tilt (device rotation)
+                        // Range is -90 (left) to 90 (right)
+                        if (event.gamma === null) {
+                            // This can happen if the sensor exists but fails
+                            showMessage('Sensor reading failed. Please try refreshing.');
+                            window.removeEventListener('deviceorientation', this);
+                            return;
+                        }
+                        
+                        /*
+                          This is the core logic:
+                          We rotate the wheel by the NEGATIVE gamma value.
+                          - Device vertical: gamma=0 -> wheel rotation=0
+                          - Device 90deg clockwise: gamma=90 -> wheel rotation=-90
+                        */
+                        let rotation = -event.gamma;
+                        
+                        // Apply the rotation
+                        wheel.style.transform = `translate(-50%, -50%) rotate(${rotation}deg)`;
+                    });
+                    
+                    isListening = true;
+                    permissionBtn.style.display = 'none'; // Hide button after success
+                } else {
+                    showMessage('Device Orientation sensor is not supported on this device.');
+                    permissionBtn.innerText = 'Not Supported';
+                    permissionBtn.disabled = true;
+                    permissionBtn.style.display = 'block';
+                }
+            };
+
+            // --- 4. Function to handle permission request ---
+            const requestPermission = () => {
+                // Check if this is iOS 13+
+                if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                    DeviceOrientationEvent.requestPermission()
+                        .then(permissionState => {
+                            if (permissionState === 'granted') {
+                                startListening();
+                            } else {
+                                showMessage('Permission denied. To use this, please enable Motion & Orientation Access in your browser settings.');
+                                permissionBtn.innerText = 'Permission Denied';
+                                permissionBtn.disabled = true;
+                            }
+                        })
+                        .catch((error) => {
+                            console.error(error);
+                            showMessage('An error occurred whilerequesting permission.');
+                        });
+                } else {
+                    // This is for non-iOS 13+ devices (e.g., Android)
+                    // We try to start listening, but we add a check
+                    startListening();
+                    
+                    if (!isListening) {
+                         // This handles the case where addEventListener was called but no sensor exists
+                        setTimeout(() => {
+                            if (!isListening) { // check again
+                                 showMessage('Device orientation sensor not found.');
+                                 permissionBtn.innerText = 'Sensor Not Found';
+                                 permissionBtn.disabled = true;
+                                 permissionBtn.style.display = 'block';
+                            }
+                        }, 1500); // give it time to fire
+                    }
+                }
+            };
+            
+            permissionBtn.addEventListener('click', requestPermission);
+
+            // --- 5. Initial check on page load ---
+            if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                // This is iOS 13+. We MUST show the button.
+                permissionBtn.style.display = 'block';
+            } else {
+                 // This is likely Android or another device.
+                 // We try to listen automatically.
+                 let hasSensor = false;
+                 const sensorCheck = (event) => {
+                    if (event.gamma !== null && !isListening) {
+                        hasSensor = true;
+                        startListening();
+                        window.removeEventListener('deviceorientation', sensorCheck);
+                    }
+                 };
+                 window.addEventListener('deviceorientation', sensorCheck);
+                 
+                 // If no sensor event fires after 1.5s, show the button
+                 // as a fallback (which will likely then say "Sensor Not Found")
+                 setTimeout(() => {
+                    window.removeEventListener('deviceorientation', sensorCheck);
+                    if(!hasSensor && !isListening) {
+                        permissionBtn.style.display = 'block';
+                    }
+                 }, 1500);
+            }
+        });
+    </script>
+</body>
+</html>
